@@ -1,0 +1,107 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function autenticado() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function esDueno(dispId) {
+      return autenticado()
+        && get(/databases/$(database)/documents/dispensadores/$(dispId)).data.propietarioUid == request.auth.uid;
+    }
+
+    function textoCorto(valor, maximo) {
+      return valor is string && valor.size() <= maximo;
+    }
+
+    function enteroEntre(valor, minimo, maximo) {
+      return valor is int && valor >= minimo && valor <= maximo;
+    }
+
+    function datosValidos(d) {
+      return textoCorto(d.nombre, 40) && d.nombre.size() > 0
+        && textoCorto(d.mascota, 40)
+        && d.modoAutomatico is bool;
+    }
+
+    match /usuarios/{uid} {
+      allow read: if autenticado() && request.auth.uid == uid;
+      allow create, update: if autenticado() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nombre', 'dispensadores'])
+        && (!('nombre' in request.resource.data) || textoCorto(request.resource.data.nombre, 40))
+        && (!('dispensadores' in request.resource.data)
+            || (request.resource.data.dispensadores is list && request.resource.data.dispensadores.size() <= 5));
+      allow delete: if false;
+    }
+
+    match /dispensadores/{dispId} {
+      allow read, delete: if autenticado() && resource.data.propietarioUid == request.auth.uid;
+
+      allow create: if autenticado()
+        && request.resource.data.keys().hasOnly(['nombre', 'mascota', 'propietarioUid', 'modoAutomatico', 'creadoEn'])
+        && datosValidos(request.resource.data)
+        && request.resource.data.propietarioUid == request.auth.uid
+        && request.resource.data.creadoEn == request.time;
+
+      allow update: if autenticado() && resource.data.propietarioUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'mascota', 'modoAutomatico'])
+        && datosValidos(request.resource.data);
+
+      match /estado/{documento} {
+        allow read, delete: if esDueno(dispId);
+        allow create, update: if esDueno(dispId) && documento == 'puente'
+          && request.resource.data.keys().hasOnly(['enLinea', 'ultimaSenal', 'nivel', 'dispositivo'])
+          && request.resource.data.enLinea is bool
+          && request.resource.data.ultimaSenal == request.time
+          && enteroEntre(request.resource.data.nivel, -1, 100)
+          && textoCorto(request.resource.data.dispositivo, 40);
+      }
+
+      match /comandos/{comandoId} {
+        function transicionValida(antes, despues) {
+          return (antes == 'PENDIENTE' && despues in ['ENVIADO', 'RECHAZADO', 'VENCIDO'])
+            || (antes == 'ENVIADO' && despues in ['CONFIRMADO', 'RECHAZADO', 'SIN_CONFIRMAR']);
+        }
+
+        allow read, delete: if esDueno(dispId);
+
+        allow create: if esDueno(dispId)
+          && request.resource.data.keys().hasOnly(['tipo', 'porciones', 'creadoPor', 'creadoEn', 'estado', 'detalle'])
+          && request.resource.data.tipo == 'DISPENSAR'
+          && enteroEntre(request.resource.data.porciones, 1, 10)
+          && request.resource.data.creadoPor == request.auth.uid
+          && request.resource.data.creadoEn == request.time
+          && request.resource.data.estado == 'PENDIENTE'
+          && request.resource.data.detalle == '';
+
+        allow update: if esDueno(dispId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'detalle'])
+          && textoCorto(request.resource.data.detalle, 80)
+          && transicionValida(resource.data.estado, request.resource.data.estado);
+      }
+
+      match /horarios/{horarioId} {
+        allow read, delete: if esDueno(dispId);
+        allow create, update: if esDueno(dispId)
+          && request.resource.data.keys().hasOnly(['hora', 'minuto', 'porciones', 'activo', 'ultimaEjecucion'])
+          && enteroEntre(request.resource.data.hora, 0, 23)
+          && enteroEntre(request.resource.data.minuto, 0, 59)
+          && enteroEntre(request.resource.data.porciones, 1, 10)
+          && request.resource.data.activo is bool
+          && textoCorto(request.resource.data.ultimaEjecucion, 10);
+      }
+
+      match /historial/{eventoId} {
+        allow read: if esDueno(dispId);
+        allow create: if esDueno(dispId)
+          && request.resource.data.keys().hasOnly(['porciones', 'origen', 'fecha', 'comandoId'])
+          && enteroEntre(request.resource.data.porciones, 1, 10)
+          && request.resource.data.origen in ['APP', 'BOTON', 'HORARIO']
+          && request.resource.data.fecha == request.time
+          && textoCorto(request.resource.data.comandoId, 40);
+        allow update, delete: if false;
+      }
+    }
+  }
+}

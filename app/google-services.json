@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "739733992802",
+    "project_id": "dispensapet-5f40b",
+    "storage_bucket": "dispensapet-5f40b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:739733992802:android:74bc57bb5013798324283b",
+        "android_client_info": {
+          "package_name": "cl.inacap.dispensapet"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDrA4csbGDYnpZMjM4lwsHyQMnwez6cpgI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
